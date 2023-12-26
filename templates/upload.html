@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 
@@ -5,95 +6,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Resumable File Upload with TUS</title>
-    <style>
-        body {
-            font-family: 'Arial', sans-serif;
-            background-color: #f4f4f4;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-        }
-
-        h2{
-            text-align: center;
-        }
-
-        .card {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.1);
-            backdrop-filter: blur(10px);
-            max-width: 400px;
-            width: 100%;
-            text-align: center;
-        }
-
-        #fileInput {
-            margin-bottom: 10px;
-            width: 100%;
-        }
-
-        #progressBar {
-            width: 0%;
-            height: 20px;
-            margin-bottom: 10px;
-            border-radius: 20px;
-            background-color: #2980b9;
-        }
-
-        #progressContainer{
-            border-radius: 20px;
-            background-color: lightgray;
-        }
-        
-        #sizeInfo {
-            text-align: center;
-            margin-bottom: 10px;
-            font-size: 12px;
-        }
-
-        button {
-            padding: 10px;
-            background-color: #3498db;
-            color: #fff;
-            border: none;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-            width: 100%;
-        }
-
-        button:hover {
-            background-color: #2980b9;
-        }
-
-        #uploads {
-            margin-top: 20px;
-        }
-
-        .upload-item {
-            border: 1px solid #ccc;
-            padding: 10px;
-            margin-bottom: 10px;
-            border-radius: 5px;
-            background-color: #fff;
-        }
-
-        .upload-item a {
-            color: #3498db;
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-    </style>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
 </head>
 
 <body>
     <div class="container">
         <div class="card">
-            <h2>Normal Upload</h2>
+            <h2>TUS Resumable Upload</h2>
             <input type="file" id="fileInput" />
             <div id="progressContainer">
                 <div id="progressBar"></div>
@@ -104,154 +23,9 @@
         <div id="uploads">
         </div>
     </div>
+    <!-- import tus js client -->
     <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.0.1/dist/tus.min.js"></script>
-    <script>
-        let upload = null
-        let uploadIsRunning = false
-        
-        const fileInput = document.getElementById('fileInput');
-        const uploadButton = document.getElementById("upload-btn");
-        const uploadedSizeDiv = document.getElementById('uploadedSize');
-        const totalSizeDiv = document.getElementById('totalSize');
-        const progressBar = document.getElementById('progressBar');
-        const uploadList = document.getElementById('upload-list');
-        
-        // function to start upload file using tus
-        function startUploadFile() {
-
-            const file = fileInput.files[0];
-        
-            if (file) {
-                uploadButton.textContent = 'Pause upload'
-                const options = {
-                    // Endpoint is the upload creation URL from your tus server
-                    endpoint: '/tus/upload/',
-                    chunkSize: 5242880,
-                    // Retry delays will enable tus-js-client to automatically retry on errors
-                    retryDelays: [0, 3000, 5000, 10000, 20000],
-                    // Attach additional meta data about the file for the server
-                    metadata: {
-                    filename: file.name,
-                    filetype: file.type,
-                    },
-                    // Callback for errors which cannot be fixed using retries
-                    onError(error) {
-                        if (error.originalRequest) {
-                          if (window.confirm(`Failed because: ${error}\nDo you want to retry?`)) {
-                            upload.start()
-                            uploadIsRunning = true
-                            return
-                          }
-                        } else {
-                          window.alert(`Failed because: ${error}`)
-                        }
-                  
-                        reset()
-                    },
-                    // Callback for reporting upload progress
-                    onProgress: function (bytesUploaded, bytesTotal) {
-                        const percentage = ((bytesUploaded / bytesTotal) * 100).toFixed(2);
-                        // Calculate sizes in MB
-                        const totalSizeMB = (bytesTotal / (1024 * 1024)).toFixed(2);
-                        const uploadedSizeMB = (bytesUploaded / (1024 * 1024)).toFixed(2);
-                        progressBar.style.width = `${percentage}%`
-        
-                        // Update size information
-                        uploadedSizeDiv.textContent = uploadedSizeMB + ' MB';
-                        totalSizeDiv.textContent = totalSizeMB + ' MB';
-                    },
-                    // Callback for once the upload is completed
-                    onSuccess: function () {
-                        console.log(upload);
-                       addUploadItem(upload.file.name, upload.file.size)
-                        reset()
-                    },
-                };
-                // Create a new tus upload
-                upload = new tus.Upload(file, options);
-                uploadIsRunning = true
-
-                // Check if there are any previous uploads to continue.
-                upload.findPreviousUploads().then((previousUploads) => {
-                    askToResumeUpload(previousUploads, upload)
-                
-                    upload.start()
-                    uploadIsRunning = true
-                  })
-            } else {
-                alert('Please select a file to upload');
-            }
-        }
-
-        function reset() {
-            uploadButton.textContent = 'Upload'
-            upload = null
-            uploadIsRunning = false
-        }
-
-        
-        function askToResumeUpload(previousUploads, currentUpload) {
-            if (previousUploads.length === 0) return
-        
-            let text = 'You tried to upload this file previously at these times:\n\n'
-            previousUploads.forEach((previousUpload, index) => {
-            text += `[${index}] ${previousUpload.creationTime}\n`
-            })
-            text +=
-            '\nEnter the corresponding number to resume an upload or press Cancel to start a new upload'
-        
-            const answer = prompt(text)
-            const index = parseInt(answer, 10)
-        
-            if (!Number.isNaN(index) && previousUploads[index]) {
-            currentUpload.resumeFromPreviousUpload(previousUploads[index])
-            }
-        }
-
-        // Function to add an upload item to the "uploads" div
-        function addUploadItem(fileName, fileSize) {
-            const uploadsDiv = document.getElementById('uploads');
-
-            // Create a new div for the upload item
-            const uploadItemDiv = document.createElement('div');
-            uploadItemDiv.classList.add('upload-item');
-
-            // Create a link for the filename
-            const fileNameLink = document.createElement('a');
-            fileNameLink.href = '/media/uploads/'+fileName;
-            fileNameLink.textContent = fileName;
-
-            // Create a span for the file size
-            const fileSizeSpan = document.createElement('span');
-            fileSizeSpan.textContent = ` | Size: ${(fileSize / (1024 * 1024)).toFixed(2)} MB`;
-
-            // Append the link and size span to the upload item div
-            uploadItemDiv.appendChild(fileNameLink);
-            uploadItemDiv.appendChild(fileSizeSpan);
-
-            // Append the upload item div to the "uploads" div
-            uploadsDiv.appendChild(uploadItemDiv);
-        }
-
-        uploadButton.addEventListener('click', (e) => {
-            e.preventDefault()
-          
-            if (upload) {
-              if (uploadIsRunning) {
-                upload.abort()
-                uploadButton.textContent = 'Resume upload'
-                uploadIsRunning = false
-              } else {
-                upload.start()
-                uploadButton.textContent = 'Pause upload'
-                uploadIsRunning = true
-              }
-            } else {
-                startUploadFile()
-            }
-          })
-
-    </script>
+    <script src="{% static 'script.js' %}"></script>
 </body>
 
 </html>
